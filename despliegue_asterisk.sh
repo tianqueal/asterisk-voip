@@ -25,22 +25,64 @@ set -eo pipefail
 
 systemctl is-system-running --wait >/dev/null 2>&1 || true
 
-REPO_URL="http://deb.freepbx.org/freepbx17-prod"
-REPO_LINE="deb [arch=amd64] $REPO_URL bookworm main"
-REPO_FILE="/etc/apt/sources.list"
-
-wget -qO - http://deb.freepbx.org/gpg/aptly-pubkey.asc | gpg --dearmor --yes -o /etc/apt/trusted.gpg.d/freepbx.gpg
-chmod 644 /etc/apt/trusted.gpg.d/freepbx.gpg
-
-if ! grep -qsF "$REPO_LINE" "$REPO_FILE"; then
-    echo "$REPO_LINE" >> "$REPO_FILE"
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    DEB_VERSION="${VERSION_CODENAME:-${VERSION_ID:-unknown}}"
+else
+    DEB_VERSION="unknown"
 fi
 
-apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends liburiparser1 asterisk20 asterisk20-core asterisk20-configs asterisk20-voicemail asterisk-core-sounds-es-gsm
+echo "=========================================================="
+echo " Sistema operativo detectado: Debian ($DEB_VERSION)"
+echo "=========================================================="
+
+case "$DEB_VERSION" in
+  bullseye|11*)
+    echo ">> Configurando para Debian 11 (Bullseye)..."
+
+    sed -i -E '/bullseye(-security|\/updates|-backports)/d' /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null || true
+
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        asterisk \
+        asterisk-config \
+        asterisk-voicemail \
+        asterisk-core-sounds-es-gsm
+    ;;
+
+  bookworm|12*)
+    echo ">> Configurando para Debian 12 (Bookworm - FreePBX 17)..."
+    REPO_URL="http://deb.freepbx.org/freepbx17-prod"
+    REPO_LINE="deb [arch=amd64] $REPO_URL bookworm main"
+    REPO_FILE="/etc/apt/sources.list.d/freepbx.list"
+
+    wget -qO - http://deb.freepbx.org/gpg/aptly-pubkey.asc | gpg --dearmor --yes -o /etc/apt/trusted.gpg.d/freepbx.gpg
+    chmod 644 /etc/apt/trusted.gpg.d/freepbx.gpg
+
+    echo "$REPO_LINE" > "$REPO_FILE"
+
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        liburiparser1 \
+        asterisk20 \
+        asterisk20-core \
+        asterisk20-configs \
+        asterisk20-voicemail \
+        asterisk-core-sounds-es-gsm
+    ;;
+
+  *)
+    echo "ERROR: Versión de distribución no soportada ($DEB_VERSION)" >&2
+    exit 1
+    ;;
+esac
 
 mkdir -p /var/lib/asterisk/sounds
-ln -sfn /usr/share/asterisk/sounds/es_MX_f_Allison /var/lib/asterisk/sounds/es
+if [ -d /usr/share/asterisk/sounds/es_MX_f_Allison ]; then
+    ln -sfn /usr/share/asterisk/sounds/es_MX_f_Allison /var/lib/asterisk/sounds/es
+elif [ -d /usr/share/asterisk/sounds/es ]; then
+    ln -sfn /usr/share/asterisk/sounds/es /var/lib/asterisk/sounds/es
+fi
 EOF
 )
 
@@ -240,7 +282,7 @@ ID=${ID:-CDA}
 MV_ASTERISK="ASTERISK_$ID"
 if [ ! -e "$DIR_BASE/$MV_ASTERISK" ]; then
   VBoxManage createvm --name "$MV_ASTERISK" --basefolder "$DIR_BASE" --ostype Debian_64 --register
-  VBoxManage storagectl "$MV_ASTERISK" --name "${MV_ASTERISK}_storage" --add sata --portcount 4
+  VBoxManage storagectl "$MV_ASTERISK" --name "${MV_ASTERISK}_storage" --add ide
   enganchar_por_uuid "$MV_ASTERISK" "${MV_ASTERISK}_storage" 0 "$IMAGEN_BASE"
   enganchar_por_uuid "$MV_ASTERISK" "${MV_ASTERISK}_storage" 1 "$IMAGEN_SWAP"
   VBoxManage modifyvm "$MV_ASTERISK" --cpus 2 --memory 1024 --pae on --vram 16 --graphicscontroller vmsvga
