@@ -7,6 +7,7 @@ DIR_BASE_POR_DEFECTO=$HOME/CDA2627
 
 URL_BASE=https://cda.drordas.info
 DIR_BASE=${DIR_BASE:-$DIR_BASE_POR_DEFECTO}
+DIR_BASE_VBOX=$(cygpath -w "$DIR_BASE" 2>/dev/null || realpath -m "$DIR_BASE" 2>/dev/null || echo "$DIR_BASE")
 DIR_VARLIB=/var/lib/CDA2627
 
 DIR_SCRIPT=$(dirname "$(realpath "$0")")
@@ -15,9 +16,29 @@ SSH_PORT=2222
 VM_USER="root"
 VM_PASS="purple"
 
-INTERFAZ_BRIDGE=$(ip route show default 2>/dev/null | awk '{ print $5 }' | head -n 1)
-IP_BRIDGE=$(ip -4 -o addr show dev "$INTERFAZ_BRIDGE" 2>/dev/null | awk '{ split($4, a, "/"); sub(/\.[0-9]+$/, ".222", a[1]); print a[1]; exit }')
-MASK_BRIDGE=$(ip -4 -o addr show dev "$INTERFAZ_BRIDGE" 2>/dev/null | awk '{ split($4, a, "/"); print a[2]; exit }')
+if ! command -v VBoxManage >/dev/null 2>&1 && [ -d "/c/Program Files/Oracle/VirtualBox" ]; then
+  export PATH="$PATH:/c/Program Files/Oracle/VirtualBox"
+fi
+
+export MSYS_NO_PATHCONV=1
+
+if [ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" = "arm64" ]; then
+  VBoxManage setextradata global "VBoxInternal2/EnableX86OnArm" 1
+  TIMEOUT_GUEST=${TIMEOUT_GUEST:-300000}
+else
+  TIMEOUT_GUEST=${TIMEOUT_GUEST:-120000}
+fi
+
+INTERFAZ_BRIDGE=$(VBoxManage list bridgedifs | tr -d '\r' | awk '
+  /^Name:/      { sub(/^Name:[ \t]+/, ""); name = $0 }
+  /^IPAddress:/ { ip = $2 }
+  /^Status:[ \t]+Up/ && ip != "0.0.0.0" { print name; exit }
+')
+IP_BRIDGE=$(VBoxManage list bridgedifs | tr -d '\r' | awk '
+  /^IPAddress:/ { ip = $2 }
+  /^Status:[ \t]+Up/ && ip != "0.0.0.0" { sub(/\.[0-9]+$/, ".222", ip); print ip; exit }
+')
+MASK_BRIDGE=24
 
 COMANDOS_INSTALACION=$(
   cat <<'EOF'
@@ -37,7 +58,7 @@ echo " Sistema operativo detectado: Debian ($DEB_VERSION)"
 echo "=========================================================="
 
 case "$DEB_VERSION" in
-  bullseye|11*)
+  (bullseye|11*)
     echo ">> Configurando para Debian 11 (Bullseye)..."
 
     sed -i -E '/bullseye(-security|\/updates|-backports)/d' /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null || true
@@ -50,7 +71,7 @@ case "$DEB_VERSION" in
         asterisk-core-sounds-es-gsm
     ;;
 
-  bookworm|12*)
+  (bookworm|12*)
     echo ">> Configurando para Debian 12 (Bookworm - FreePBX 17)..."
     REPO_URL="http://deb.freepbx.org/freepbx17-prod"
     REPO_LINE="deb [arch=amd64] $REPO_URL bookworm main"
@@ -71,7 +92,7 @@ case "$DEB_VERSION" in
         asterisk-core-sounds-es-gsm
     ;;
 
-  *)
+  (*)
     echo "ERROR: Versión de distribución no soportada ($DEB_VERSION)" >&2
     exit 1
     ;;
@@ -90,7 +111,7 @@ es_imagen_registrada() {
   local IMAGEN=$1
   local TIPO=$2
 
-  VBoxManage list hdds | awk -v img="$IMAGEN" -v tipo="$TIPO" '
+  VBoxManage list hdds | tr -d '\r' | ENV_IMG="$IMAGEN" ENV_TIPO="$TIPO" awk '
         BEGIN { RS = ""; FS = "\n"; ok = 0 }
         {
             location = ""; type = ""
@@ -98,7 +119,7 @@ es_imagen_registrada() {
                 if ($i ~ /^Location:/) { location = $i; sub(/^Location:[ \t]*/, "", location) }
                 if ($i ~ /^Type:/)     { type     = $i; sub(/^Type:[ \t]*/,     "", type) }
             }
-            if (location == img && tolower(type) == tolower(tipo)) ok = 1
+            if (location == ENVIRON["ENV_IMG"] && tolower(type) == tolower(ENVIRON["ENV_TIPO"])) ok = 1
         }
         END { exit !ok }
     '
@@ -107,7 +128,7 @@ es_imagen_registrada() {
 uuid_imagen() {
   local IMAGEN=$1
 
-  VBoxManage list hdds | awk -v img="$IMAGEN" '
+  VBoxManage list hdds | tr -d '\r' | ENV_IMG="$IMAGEN" awk '
         BEGIN { RS = ""; FS = "\n" }
         {
             uuid = ""; location = ""
@@ -115,7 +136,7 @@ uuid_imagen() {
                 if ($i ~ /^UUID:/)     { uuid     = $i; sub(/^UUID:[ \t]*/,     "", uuid) }
                 if ($i ~ /^Location:/) { location = $i; sub(/^Location:[ \t]*/, "", location) }
             }
-            if (location == img) { print uuid; exit }
+            if (location == ENVIRON["ENV_IMG"]) { print uuid; exit }
         }
     '
 }
@@ -127,7 +148,7 @@ registrar_imagen() {
   local PUERTO=$4
 
   if ! VBoxManage list vms | grep -q CDA_NO_BORRAR; then
-    VBoxManage createvm --name CDA_NO_BORRAR --basefolder "$DIR_BASE" --ostype Debian_64 --register
+    VBoxManage createvm --name CDA_NO_BORRAR --basefolder "$DIR_BASE_VBOX" --ostype Debian_64 --register
     VBoxManage storagectl CDA_NO_BORRAR --name CDA_NO_BORRAR_storage --add sata --portcount 4
   fi
 
@@ -226,7 +247,11 @@ preparar_imagen() {
     if [ ! -e "$DIR_BASE_DESTINO/$NOMBRE_IMAGEN.vdi.zip" ]; then
       echo "Descargando imagen $URL_ORIGEN ... "
       cd "$DIR_BASE_DESTINO" || exit 1
-      wget --continue "$URL_ORIGEN"
+      if command -v wget >/dev/null 2>&1; then
+        wget --continue "$URL_ORIGEN"
+      else
+        curl -fLO -C - "$URL_ORIGEN"
+      fi
     fi
     echo "Descomprimiendo imagen $IMAGEN_DESTINO ... "
     unzip "$NOMBRE_IMAGEN.vdi.zip"
@@ -251,8 +276,8 @@ if [ ! -e "$IMAGEN_SWAP" ]; then
   preparar_imagen "swap1GB" "$URL_BASE" "$DIR_BASE"
 fi
 
-IMAGEN_BASE=$(realpath -m "$IMAGEN_BASE")
-IMAGEN_SWAP=$(realpath -m "$IMAGEN_SWAP")
+IMAGEN_BASE=$(cygpath -w "$IMAGEN_BASE" 2>/dev/null || realpath "$IMAGEN_BASE")
+IMAGEN_SWAP=$(cygpath -w "$IMAGEN_SWAP" 2>/dev/null || realpath "$IMAGEN_SWAP")
 
 comprobar_registro "$IMAGEN_BASE" "$IMAGEN_SWAP"
 registrar_imagenes "$DIR_BASE" "$IMAGEN_BASE" "$IMAGEN_SWAP"
@@ -281,7 +306,7 @@ ID=${ID:-CDA}
 
 MV_ASTERISK="ASTERISK_$ID"
 if [ ! -e "$DIR_BASE/$MV_ASTERISK" ]; then
-  VBoxManage createvm --name "$MV_ASTERISK" --basefolder "$DIR_BASE" --ostype Debian_64 --register
+  VBoxManage createvm --name "$MV_ASTERISK" --basefolder "$DIR_BASE_VBOX" --ostype Debian_64 --register
   VBoxManage storagectl "$MV_ASTERISK" --name "${MV_ASTERISK}_storage" --add ide
   enganchar_por_uuid "$MV_ASTERISK" "${MV_ASTERISK}_storage" 0 "$IMAGEN_BASE"
   enganchar_por_uuid "$MV_ASTERISK" "${MV_ASTERISK}_storage" 1 "$IMAGEN_SWAP"
@@ -315,7 +340,14 @@ if ! VBoxManage list runningvms | grep -q "\"$MV_ASTERISK\""; then
   VBoxManage startvm --type=headless "$MV_ASTERISK" && echo "Iniciando e instalando Asterisk en modo headless."
 fi
 
-VBoxManage guestproperty wait "$MV_ASTERISK" "/VirtualBox/GuestAdd/Version" --timeout 60000
+if ! VBoxManage guestproperty get "$MV_ASTERISK" "/VirtualBox/GuestAdd/Version" 2>/dev/null | grep -q "Value:"; then
+  echo "Esperando notificación de inicio del sistema operativo invitado..."
+  if ! VBoxManage guestproperty wait "$MV_ASTERISK" "/VirtualBox/GuestAdd/Version" \
+    --timeout "$TIMEOUT_GUEST" --fail-on-timeout >/dev/null 2>&1; then
+    echo "ERROR: Tiempo de espera agotado ($((TIMEOUT_GUEST / 1000))s) esperando al SO invitado." >&2
+    exit 1
+  fi
+fi
 
 if ! VBoxManage guestcontrol "$MV_ASTERISK" run --exe "/bin/bash" \
   --username "$VM_USER" --password "$VM_PASS" \
@@ -330,11 +362,15 @@ if ! VBoxManage guestcontrol "$MV_ASTERISK" run --exe "/bin/bash" \
   fi
 
   if [ -d "$DIR_SCRIPT/configs" ] && [ -n "$(ls -A "$DIR_SCRIPT/configs")" ]; then
+    CONFIG_ARCHIVOS=()
+    for f in "$DIR_SCRIPT/configs/"*; do
+      CONFIG_ARCHIVOS+=("$(cygpath -w "$f" 2>/dev/null || echo "$f")")
+    done
     VBoxManage guestcontrol "$MV_ASTERISK" copyto -R \
       --username "$VM_USER" \
       --password "$VM_PASS" \
       --target-directory "/etc/asterisk/" \
-      "$DIR_SCRIPT/configs/"*
+      "${CONFIG_ARCHIVOS[@]}"
   fi
 
   if ! VBoxManage guestcontrol "$MV_ASTERISK" run --exe "/bin/bash" \
