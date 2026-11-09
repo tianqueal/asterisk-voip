@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+    branches: [main, "feat/**"]
+
+jobs:
+  host:
+    name: Host (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate host script (${{ matrix.os }})
+        shell: bash
+        run: ./test_despliegue.sh --ci-host
+
+  guest:
+    name: Guest (debian:${{ matrix.debian }})
+    runs-on: ubuntu-latest
+    container:
+      image: debian:${{ matrix.debian }}
+    strategy:
+      fail-fast: false
+      matrix:
+        debian: ["11", "12"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Provision and verify Asterisk (debian:${{ matrix.debian }})
+        run: ./test_despliegue.sh --ci-guest
