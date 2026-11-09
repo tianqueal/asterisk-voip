@@ -29,16 +29,10 @@ else
   TIMEOUT_GUEST=${TIMEOUT_GUEST:-120000}
 fi
 
-INTERFAZ_BRIDGE=$(VBoxManage list bridgedifs | tr -d '\r' | awk '
-  /^Name:/      { sub(/^Name:[ \t]+/, ""); name = $0 }
-  /^IPAddress:/ { ip = $2 }
-  /^Status:[ \t]+Up/ && ip != "0.0.0.0" { print name; exit }
-')
-IP_BRIDGE=$(VBoxManage list bridgedifs | tr -d '\r' | awk '
-  /^IPAddress:/ { ip = $2 }
-  /^Status:[ \t]+Up/ && ip != "0.0.0.0" { sub(/\.[0-9]+$/, ".222", ip); print ip; exit }
-')
-MASK_BRIDGE=24
+INTERFAZ_BRIDGE=${INTERFAZ_BRIDGE:-}
+IP_BRIDGE_DEFECTO="10.47.75.222"
+IP_BRIDGE=${IP_BRIDGE:-}
+MASK_BRIDGE=${MASK_BRIDGE:-}
 
 COMANDOS_INSTALACION=$(
   cat <<'EOF'
@@ -259,6 +253,144 @@ preparar_imagen() {
   fi
 }
 
+listar_interfaces() {
+  VBoxManage list bridgedifs | tr -d '\r' | awk '
+    /^Name:/        { sub(/^Name:[ \t]+/, ""); nombre = $0; ip = ""; mascara = "" }
+    /^IPAddress:/   { ip = $2 }
+    /^NetworkMask:/ { mascara = $2 }
+    /^Status:/      { print nombre "|" $2 "|" ip "|" mascara }
+  '
+}
+
+es_ip() {
+  local IFS=. OCTETO
+  [[ $1 =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || return 1
+  for OCTETO in $1; do
+    [ "$OCTETO" -le 255 ] || return 1
+  done
+}
+
+# 255.255.255.0 -> 24 (24 si no se puede calcular)
+mascara_a_prefijo() {
+  local BITS=0 OCTETO
+  if es_ip "$1"; then
+    for OCTETO in ${1//./ }; do
+      while [ "$OCTETO" -gt 0 ]; do
+        BITS=$((BITS + (OCTETO & 1)))
+        OCTETO=$((OCTETO >> 1))
+      done
+    done
+  fi
+  [ "$BITS" -gt 0 ] && echo "$BITS" || echo 24
+}
+
+ip_en_uso() {
+  case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*) ping -n 1 -w 1000 "$1" ;;
+  Darwin) ping -c 1 -W 1000 "$1" ;;
+  *) ping -c 1 -W 1 "$1" ;;
+  esac 2>/dev/null | grep -qi 'ttl='
+}
+
+cancelar() {
+  echo "Operación cancelada por el usuario."
+  exit 0
+}
+
+elegir_opcion() {
+  local MENSAJE=$1 ESTADO OPCION
+  shift
+  if [ -n "$DIALOG" ]; then
+    local ITEMS=() I=1
+    for OPCION in "$@"; do
+      ITEMS+=("$I" "$OPCION")
+      I=$((I + 1))
+    done
+    RESPUESTA=$("$DIALOG" --clear --title "$TITULO" --backtitle "$CURSO" \
+      --menu "$MENSAJE" 20 78 12 "${ITEMS[@]}" 2>&1 >/dev/tty)
+    ESTADO=$?
+    clear
+    [ "$ESTADO" -eq 0 ] || cancelar
+  else
+    echo "$MENSAJE"
+    PS3="Opción: "
+    select OPCION in "$@"; do
+      [ -n "$OPCION" ] && break
+      echo "Opción no válida."
+    done
+    [ -n "$OPCION" ] || cancelar
+    RESPUESTA=$REPLY
+  fi
+}
+
+# Pide un texto con un valor por defecto y lo deja en RESPUESTA.
+pedir_texto() {
+  local MENSAJE=$1 DEFAULT=$2 ESTADO
+  if [ -n "$DIALOG" ]; then
+    RESPUESTA=$("$DIALOG" --clear --title "$TITULO" --backtitle "$CURSO" \
+      --inputbox "$MENSAJE" 10 74 "$DEFAULT" 2>&1 >/dev/tty)
+    ESTADO=$?
+    clear
+    [ "$ESTADO" -eq 0 ] || cancelar
+  else
+    echo "$MENSAJE"
+    read -r -p "[$DEFAULT]: " RESPUESTA || cancelar
+  fi
+  RESPUESTA=${RESPUESTA:-$DEFAULT}
+}
+
+# Fija INTERFAZ_BRIDGE. Si solo hay una interfaz se usa sin preguntar.
+seleccionar_interfaz() {
+  local NOMBRES=() ETIQUETAS=() NOMBRE ESTADO IP MASCARA
+  while IFS='|' read -r NOMBRE ESTADO IP MASCARA; do
+    NOMBRES+=("$NOMBRE")
+    ETIQUETAS+=("$NOMBRE [$ESTADO] $IP")
+  done < <(listar_interfaces)
+
+  case ${#NOMBRES[@]} in
+  0)
+    echo "ERROR: VirtualBox no detecta ninguna interfaz de red para el modo puente." >&2
+    exit 1
+    ;;
+  1) INTERFAZ_BRIDGE=${NOMBRES[0]} ;;
+  *)
+    elegir_opcion "Interfaz de red del host para el adaptador puente:" "${ETIQUETAS[@]}"
+    INTERFAZ_BRIDGE=${NOMBRES[$((RESPUESTA - 1))]}
+    ;;
+  esac
+  echo "Interfaz puente: $INTERFAZ_BRIDGE"
+}
+
+# Fija IP_BRIDGE y MASK_BRIDGE. Se propone la .222 de la red del host y se permite cambiarla.
+configurar_ip_bridge() {
+  local NOMBRE ESTADO IP_HOST MASCARA PROPUESTA MENSAJE
+  while IFS='|' read -r NOMBRE ESTADO IP_HOST MASCARA; do
+    [ "$NOMBRE" = "$INTERFAZ_BRIDGE" ] && break
+  done < <(listar_interfaces)
+
+  MASK_BRIDGE=${MASK_BRIDGE:-$(mascara_a_prefijo "$MASCARA")}
+
+  if es_ip "$IP_HOST" && [ "$IP_HOST" != 0.0.0.0 ] && [[ $IP_HOST != 169.254.* ]]; then
+    PROPUESTA=${IP_HOST%.*}.222
+    MENSAJE="El host tiene $IP_HOST/$MASK_BRIDGE en $INTERFAZ_BRIDGE."
+  else
+    PROPUESTA=$IP_BRIDGE_DEFECTO
+    MENSAJE="No se pudo obtener la IP del host en $INTERFAZ_BRIDGE."
+  fi
+
+  if ip_en_uso "$PROPUESTA"; then
+    MENSAJE="$MENSAJE AVISO: $PROPUESTA ya responde a ping, conviene elegir otra."
+  fi
+
+  while true; do
+    pedir_texto "$MENSAJE IP de la centralita:" "$PROPUESTA"
+    es_ip "$RESPUESTA" && break
+    echo "IP no válida: $RESPUESTA"
+  done
+  IP_BRIDGE=$RESPUESTA
+  echo "IP de la centralita: $IP_BRIDGE/$MASK_BRIDGE"
+}
+
 if [ ! -e "$DIR_BASE" ]; then
   echo "Creando directorio $DIR_BASE ..."
   mkdir -p "$DIR_BASE"
@@ -305,6 +437,17 @@ fi
 ID=${ID:-CDA}
 
 MV_ASTERISK="ASTERISK_$ID"
+
+if VBoxManage list runningvms | grep -q "\"$MV_ASTERISK\""; then
+  # Se reutiliza la IP con la que se arrancó la máquina.
+  IP_BRIDGE=${IP_BRIDGE:-$(VBoxManage guestproperty get "$MV_ASTERISK" /DSBOX/eth/1/address 2>/dev/null | tr -d '\r' | sed -n 's/^Value: //p')}
+else
+  [ -n "$INTERFAZ_BRIDGE" ] || seleccionar_interfaz
+  [ -n "$IP_BRIDGE" ] || configurar_ip_bridge
+fi
+IP_BRIDGE=${IP_BRIDGE:-$IP_BRIDGE_DEFECTO}
+MASK_BRIDGE=${MASK_BRIDGE:-24}
+
 if [ ! -e "$DIR_BASE/$MV_ASTERISK" ]; then
   VBoxManage createvm --name "$MV_ASTERISK" --basefolder "$DIR_BASE_VBOX" --ostype Debian_64 --register
   VBoxManage storagectl "$MV_ASTERISK" --name "${MV_ASTERISK}_storage" --add ide
@@ -340,13 +483,24 @@ if ! VBoxManage list runningvms | grep -q "\"$MV_ASTERISK\""; then
   VBoxManage startvm --type=headless "$MV_ASTERISK" && echo "Iniciando e instalando Asterisk en modo headless."
 fi
 
-if ! VBoxManage guestproperty get "$MV_ASTERISK" "/VirtualBox/GuestAdd/Version" 2>/dev/null | grep -q "Value:"; then
-  echo "Esperando notificación de inicio del sistema operativo invitado..."
-  if ! VBoxManage guestproperty wait "$MV_ASTERISK" "/VirtualBox/GuestAdd/Version" \
-    --timeout "$TIMEOUT_GUEST" --fail-on-timeout >/dev/null 2>&1; then
-    echo "ERROR: Tiempo de espera agotado ($((TIMEOUT_GUEST / 1000))s) esperando al SO invitado." >&2
-    exit 1
-  fi
+# Se espera a que las Guest Additions estén activas en este arranque (run level >= 2).
+# Mirar /VirtualBox/GuestAdd/Version puede servir, pero no es verídica del todo
+# ya que se conserva de arranques anteriores.
+guest_listo() {
+  VBoxManage showvminfo "$MV_ASTERISK" --machinereadable | tr -d '\r' |
+    grep -qE '^GuestAdditionsRunLevel=[23]'
+}
+
+if ! guest_listo; then
+  echo "Esperando a que arranque el sistema operativo invitado..."
+  LIMITE=$((SECONDS + TIMEOUT_GUEST / 1000))
+  until guest_listo; do
+    if [ "$SECONDS" -ge "$LIMITE" ]; then
+      echo "ERROR: Tiempo de espera agotado ($((TIMEOUT_GUEST / 1000))s) esperando al SO invitado." >&2
+      exit 1
+    fi
+    sleep 3
+  done
 fi
 
 if ! VBoxManage guestcontrol "$MV_ASTERISK" run --exe "/bin/bash" \
