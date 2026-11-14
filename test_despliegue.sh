@@ -247,10 +247,11 @@ else
   fail "La máquina $MV_TEST no figura en runningvms"
 fi
 
-if VBoxManage showvminfo "$MV_TEST" --machinereadable | tr -d '\r' | grep -qE '^GuestAdditionsRunLevel=[23]'; then
-  ok "GuestAdditionsRunLevel se encuentra en nivel activo (2 o 3)"
+GA_RUNLEVEL=$(VBoxManage showvminfo "$MV_TEST" --machinereadable | tr -d '\r' | sed -n 's/^GuestAdditionsRunLevel=//p')
+if [ "$GA_RUNLEVEL" = "2" ] || [ "$GA_RUNLEVEL" = "3" ]; then
+  ok "GuestAdditionsRunLevel se encuentra en nivel activo ($GA_RUNLEVEL)"
 else
-  fail "GuestAdditionsRunLevel no está en nivel 2 o 3"
+  fail "GuestAdditionsRunLevel no está en nivel 2 o 3 (actual: ${GA_RUNLEVEL:-desconocido})"
 fi
 
 IP_CENTRALITA=$(VBoxManage guestproperty get "$MV_TEST" /DSBOX/eth/1/address 2>/dev/null | tr -d '\r' | sed -n 's/^Value: //p')
