@@ -5,12 +5,12 @@ en un contenedor. Usa **los mismos ficheros de `configs/`**, así que el
 comportamiento es el mismo: extensiones 1001/1002, buzón de voz (600, 6001,
 6002), prueba de eco (500) y locuciones en español.
 
-| | Máquina virtual | Docker |
-|---|---|---|
-| Arranque | minutos (descarga de imagen e instalación) | segundos |
-| Tamaño | imagen de disco completa | ~50 MB (~22 MB comprimida) |
-| Asterisk | 20 (Debian 12) / 16 (Debian 11) | 20.11 (Alpine 3.22) |
-| Actualizar configuración | `vm/actualizar_config.sh` | `docker compose exec asterisk cda-recargar` |
+|                          | Máquina virtual                            | Docker                                      |
+| ------------------------ | ------------------------------------------ | ------------------------------------------- |
+| Arranque                 | minutos (descarga de imagen e instalación) | segundos                                    |
+| Tamaño                   | imagen de disco completa                   | ~50 MB (~22 MB comprimida)                  |
+| Asterisk                 | 20 (Debian 12) / 16 (Debian 11)            | 20.11 (Alpine 3.22)                         |
+| Actualizar configuración | `vm/actualizar_config.sh`                  | `docker compose exec asterisk cda-recargar` |
 
 ## Requisitos
 
@@ -44,11 +44,11 @@ comportamiento es el mismo: extensiones 1001/1002, buzón de voz (600, 6001,
 
 5. Configura los móviles:
 
-   | Campo | Valor |
-   |---|---|
+   | Campo              | Valor                                                    |
+   | ------------------ | -------------------------------------------------------- |
    | Servidor / dominio | la `EXTERNAL_IP` del paso 1 (puerto 5060, **UDP** o TCP) |
-   | Usuario | `1001` o `1002` |
-   | Contraseña | `CDA2627-1001` / `CDA2627-1002` (ver `configs/pjsip.conf`) |
+   | Usuario            | `1001` o `1002`                                          |
+   | Contraseña         | `1234` / `1234` (ver `configs/pjsip.conf`)               |
 
    Llama al **500** (eco) para comprobar el audio en los dos sentidos.
 
@@ -106,12 +106,12 @@ montaje (por ejemplo en otro equipo).
 
 ## Variables de entorno
 
-| Variable | Por defecto | Descripción |
-|---|---|---|
-| `EXTERNAL_IP` | *(vacía)* | IP del host que se anuncia a los móviles. Necesaria con red bridge. |
-| `LOCAL_NET` | *(vacía)* | Redes adicionales consideradas internas (`192.168.0.0/16 10.0.0.0/8`). |
-| `RTP_PORT_START` | `10000` | Primer puerto UDP de audio/vídeo. |
-| `RTP_PORT_END` | `10099` | Último puerto UDP de audio/vídeo (~50 llamadas simultáneas). |
+| Variable          | Por defecto                   | Descripción                                                                     |
+| ----------------- | ----------------------------- | ------------------------------------------------------------------------------- |
+| `EXTERNAL_IP`     | _(vacía)_                     | IP del host que se anuncia a los móviles. Necesaria con red bridge.             |
+| `LOCAL_NET`       | _(vacía)_                     | Redes adicionales consideradas internas (`192.168.0.0/16 10.0.0.0/8`).          |
+| `RTP_PORT_START`  | `10000`                       | Primer puerto UDP de audio/vídeo.                                               |
+| `RTP_PORT_END`    | `10099`                       | Último puerto UDP de audio/vídeo (~50 llamadas simultáneas).                    |
 | `PJSIP_TRANSPORT` | `transport-udp transport-tcp` | Transportes (separados por espacios) a los que se añaden los parámetros de NAT. |
 
 `compose.yaml` publica automáticamente el rango RTP indicado. El rango es
@@ -187,11 +187,11 @@ docker/
 
 ## Solución de problemas
 
-| Síntoma | Causa probable |
-|---|---|
-| El móvil no se registra | IP del servidor errónea, o el cortafuegos del host bloquea 5060/UDP (en Windows, permite Docker Desktop en redes privadas). |
-| La llamada conecta pero no hay audio | Falta `EXTERNAL_IP` o no es la IP del host en la wifi; o el rango RTP no está publicado. |
-| Audio en un solo sentido | `EXTERNAL_IP` apunta a otra interfaz (VPN, adaptador virtual de VirtualBox/WSL…). |
-| Los cambios de `configs/` no se aplican | Ejecuta `cda-recargar`; para `modules.conf` o el transporte, `docker compose restart`. |
-| Ver qué configuración se ha generado | `docker compose exec asterisk cat /etc/asterisk/pjsip.conf` |
-| En el log: `no local system nameservers configured` | Aviso inofensivo por el DNS de Docker; no afecta a las llamadas. |
+| Síntoma                                             | Causa probable                                                                                                              |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| El móvil no se registra                             | IP del servidor errónea, o el cortafuegos del host bloquea 5060/UDP (en Windows, permite Docker Desktop en redes privadas). |
+| La llamada conecta pero no hay audio                | Falta `EXTERNAL_IP` o no es la IP del host en la wifi; o el rango RTP no está publicado.                                    |
+| Audio en un solo sentido                            | `EXTERNAL_IP` apunta a otra interfaz (VPN, adaptador virtual de VirtualBox/WSL…).                                           |
+| Los cambios de `configs/` no se aplican             | Ejecuta `cda-recargar`; para `modules.conf` o el transporte, `docker compose restart`.                                      |
+| Ver qué configuración se ha generado                | `docker compose exec asterisk cat /etc/asterisk/pjsip.conf`                                                                 |
+| En el log: `no local system nameservers configured` | Aviso inofensivo por el DNS de Docker; no afecta a las llamadas.                                                            |
