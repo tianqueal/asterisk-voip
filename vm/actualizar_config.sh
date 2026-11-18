@@ -4,6 +4,7 @@ TITULO="Trabajo grupal: Asterisk (CDA_1)"
 CURSO="Centros de Datos, 2026/27"
 
 DIR_SCRIPT=$(dirname "$(realpath "$0")")
+DIR_CONFIGS=$(dirname "$DIR_SCRIPT")/configs
 
 FICHEROS=(extensions.conf modules.conf pjsip.conf voicemail.conf)
 DIR_ASTERISK=/etc/asterisk
@@ -28,8 +29,8 @@ ejecutar_en_vm() {
 }
 
 for f in "${FICHEROS[@]}"; do
-  if [ ! -f "$DIR_SCRIPT/configs/$f" ]; then
-    echo "ERROR: No se encuentra $DIR_SCRIPT/configs/$f" >&2
+  if [ ! -f "$DIR_CONFIGS/$f" ]; then
+    echo "ERROR: No se encuentra $DIR_CONFIGS/$f" >&2
     exit 1
   fi
 done
@@ -82,7 +83,7 @@ for f in "${FICHEROS[@]}"; do
   ejecutar_en_vm "[ ! -f $DIR_ASTERISK/$f ] || cp -f $DIR_ASTERISK/$f $DIR_ASTERISK/$f.bak"
 
   echo "Enviando $f a $MV_ASTERISK ..."
-  if ! VBoxManage guestcontrol "$MV_ASTERISK" copyto     --username "$VM_USER"     --password "$VM_PASS"     --target-directory "$DIR_ASTERISK/"     "$(cygpath -w "$DIR_SCRIPT/configs/$f" 2>/dev/null || echo "$DIR_SCRIPT/configs/$f")"; then
+  if ! VBoxManage guestcontrol "$MV_ASTERISK" copyto     --username "$VM_USER"     --password "$VM_PASS"     --target-directory "$DIR_ASTERISK/"     "$(cygpath -w "$DIR_CONFIGS/$f" 2>/dev/null || echo "$DIR_CONFIGS/$f")"; then
     echo "ERROR: Fallo al copiar $f a la máquina virtual." >&2
     exit 1
   fi

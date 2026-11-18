@@ -1,0 +1,12 @@
+#!/bin/sh
+# Equivalente a actualizar_config.sh para el contenedor: regenera la
+# configuracion desde /config y la recarga sin reiniciar Asterisk.
+# Uso: docker compose exec asterisk cda-recargar
+set -eu
+
+/usr/local/bin/cda-config
+asterisk -rx 'module reload res_pjsip.so'
+asterisk -rx 'dialplan reload'
+asterisk -rx 'module reload app_voicemail.so'
+
+echo "Configuracion recargada. Si cambias modules.conf o el transporte: docker compose restart"

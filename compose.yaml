@@ -1,0 +1,29 @@
+# Centralita Asterisk del trabajo CDA con Docker Compose.
+# Uso rapido:  EXTERNAL_IP=<IP de tu equipo en la wifi> docker compose up -d --build
+# (o pon EXTERNAL_IP en un fichero .env junto a este). Ver docs/docker.md.
+services:
+  asterisk:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: asterisk-cda:latest
+    container_name: asterisk-cda
+    init: true
+    restart: unless-stopped
+    environment:
+      EXTERNAL_IP: ${EXTERNAL_IP:-}
+      LOCAL_NET: ${LOCAL_NET:-}
+      RTP_PORT_START: ${RTP_PORT_START:-10000}
+      RTP_PORT_END: ${RTP_PORT_END:-10099}
+    ports:
+      - "5060:5060/udp"
+      - "5060:5060/tcp"
+      - "${RTP_PORT_START:-10000}-${RTP_PORT_END:-10099}:${RTP_PORT_START:-10000}-${RTP_PORT_END:-10099}/udp"
+    volumes:
+      - ./configs:/config:ro          # editar configs/ y ejecutar cda-recargar
+      - buzones:/var/spool/asterisk   # los mensajes de voz sobreviven al contenedor
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+volumes:
+  buzones:
