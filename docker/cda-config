@@ -1,22 +1,12 @@
 #!/bin/sh
-# =====================================================================
-# cda-config: genera /etc/asterisk dentro del contenedor.
-#
-# Orden de capas (la ultima gana):
-#   1. /usr/share/cda/base     configuracion propia del contenedor (logger, ...)
-#   2. /usr/share/cda/configs  configs/ del repositorio, copiada en la imagen
-#   3. /config                 configs/ montado como volumen (cambios sin rebuild)
-#
-# Despues genera rtp.conf y, si hay EXTERNAL_IP, anade al transporte de
-# pjsip.conf los parametros de NAT. Los ficheros del host no se modifican.
-# =====================================================================
+# Genera /etc/asterisk por capas: base, configs/ de la imagen y /config.
+# La ultima capa prevalece (ver docs/docker.md).
 set -eu
 
 ETC=/etc/asterisk
 TRANSPORTES=${PJSIP_TRANSPORT:-transport-udp transport-tcp}
 
-# Se parte de cero: el sistema de ficheros del contenedor persiste entre
-# reinicios y no deben quedar restos de una generacion anterior.
+# Se vacia el directorio porque el contenedor lo conserva entre reinicios
 rm -f "$ETC"/*
 
 for DIR in /usr/share/cda/base /usr/share/cda/configs /config; do
@@ -25,14 +15,11 @@ for DIR in /usr/share/cda/base /usr/share/cda/configs /config; do
   done
 done
 
-# Quita CRLF por si los ficheros vienen de un clon en Windows
+# Se eliminan posibles CRLF
 sed -i 's/\r$//' "$ETC"/*.conf
 
-# La VM trae todos los .conf de ejemplo; el contenedor solo los necesarios.
-# Con autoload=yes, los modulos sin su fichero fallan y llenan el log de
-# errores, asi que se desactivan SOLO si falta su fichero: si se anade por
-# ejemplo queues.conf a configs/, app_queue vuelve a cargarse solo.
-# Formato: fichero_requerido:modulo [modulo...]   ("-" = siempre)
+# Se desactivan los modulos cuyo fichero no existe.
+# Formato: fichero_requerido modulo [modulo...] ("-" = siempre)
 NOLOAD=$(
   while read -r REQ MODS; do
     [ -n "$REQ" ] || continue
@@ -87,11 +74,7 @@ rtpstart=${RTP_PORT_START:-10000}
 rtpend=${RTP_PORT_END:-10099}
 EOF
 
-# Con la red bridge de Docker, Asterisk solo ve la IP interna del contenedor
-# (172.x) y la anunciaria en el SDP: los moviles no podrian enviarle audio.
-# external_*_address hace que anuncie la IP del host; local_net (opcional,
-# variable LOCAL_NET) indica que redes son "internas" y no necesitan esa
-# reescritura.
+# Con EXTERNAL_IP se anuncia la IP del host en lugar de la interna (NAT)
 if [ -n "${EXTERNAL_IP:-}" ]; then
   {
     printf '\n; --- Anadido por cda-config (Docker, NAT) ---\n'
@@ -99,11 +82,7 @@ if [ -n "${EXTERNAL_IP:-}" ]; then
       printf '[%s](+)\n' "$TRANSPORTE"
       printf 'external_media_address=%s\n' "$EXTERNAL_IP"
       printf 'external_signaling_address=%s\n' "$EXTERNAL_IP"
-      # La red del propio contenedor (172.x) NO se declara como local_net: en
-      # Docker Desktop (Windows/macOS) todos los moviles llegan con la IP de la
-      # puerta de enlace de Docker (172.x.0.1). Si esa red fuera "local", Asterisk
-      # anunciaria su IP interna en el SDP y no habria audio (la llamada cuelga
-      # con 408 por falta de ACK). Solo se declaran las de LOCAL_NET.
+      # Solo se declaran las redes de LOCAL_NET, nunca la interna de Docker
       for RED in ${LOCAL_NET:-}; do
         printf 'local_net=%s\n' "$RED"
       done

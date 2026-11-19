@@ -4,7 +4,7 @@ set -eu
 
 /usr/local/bin/cda-config
 
-# Permite pasar argumentos extra a asterisk: docker run ... imagen -vvvvv
+# Sin argumentos se usa -vvv
 if [ "$#" -eq 0 ]; then
   set -- -vvv
 fi

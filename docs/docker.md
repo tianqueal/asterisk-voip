@@ -69,7 +69,7 @@ external_signaling_address=<EXTERNAL_IP>
 
 No se declara la red interna del contenedor como `local_net`: en Docker
 Desktop (Windows/macOS) todos los móviles llegan con la IP de la puerta de
-enlace de Docker (`172.x.0.1`), y si esa red se considerase "local" Asterisk
+enlace de Docker (`172.x.0.1`), y si esa red se considerase "local", Asterisk
 anunciaría su IP interna en vez de `EXTERNAL_IP` (la llamada se contesta pero
 no hay audio y termina con un 408 por falta de ACK).
 
@@ -131,6 +131,9 @@ docker run -d --name asterisk-cda --init --restart unless-stopped \
   asterisk-cda
 ```
 
+Puedes añadir argumentos tras el nombre de la imagen y se pasarán a
+`asterisk -f` (por ejemplo, `asterisk-cda -vvvvv`). Sin argumentos se usa `-vvv`.
+
 En PowerShell, cambia `"$PWD/configs"` por `"${PWD}/configs"` y las `\` de
 final de línea por `` ` ``.
 
@@ -147,6 +150,91 @@ docker run -d --name asterisk-cda --init --network host \
 (En Docker Desktop para Windows/macOS `--network host` no expone los puertos a
 la red local: usa la red bridge con `EXTERNAL_IP`).
 
+## IP propia para la centralita
+
+Con la configuración por defecto, la centralita usa la IP de tu equipo
+(`EXTERNAL_IP`). Si prefieres que tenga una dirección propia en la red local,
+como ocurre con la máquina virtual, las opciones dependen del sistema operativo.
+
+### Por qué la VM sí tiene IP propia y Docker Desktop no
+
+VirtualBox, en modo puente (_bridged_), instala un driver que se engancha a la
+tarjeta de red física. La VM tiene su propia tarjeta virtual y sus tramas salen
+directamente a la LAN, así que el router la ve como un dispositivo más y le
+asigna una IP por DHCP. Por wifi, VirtualBox además traduce la MAC para que el
+punto de acceso no descarte esas tramas.
+
+```
+Router ── [tarjeta física]
+              ├── Windows       192.168.1.50
+              └── VM (puente)   192.168.1.60
+```
+
+Docker Desktop (Windows/macOS) ejecuta los contenedores dentro de una VM Linux
+propia (WSL2/Hyper-V) que está detrás de un NAT interno, no en modo puente. Una
+red `macvlan` creada ahí se engancha a la tarjeta virtual de esa VM, así que la
+IP que reciba el contenedor solo existe dentro de esa red interna y la LAN no
+puede verla.
+
+```
+Router ── [tarjeta física] ── Windows 192.168.1.50
+                                 └─ NAT ── VM de Docker 172.x
+                                              └── contenedor → invisible para la LAN
+```
+
+En Linux no hay VM intermedia: Docker usa el kernel del equipo y puede
+conectar el contenedor directamente a la tarjeta real, igual que VirtualBox.
+
+### Linux: red `ipvlan` o `macvlan`
+
+Así el contenedor tiene su propia IP en la LAN. No hay NAT, así que no hacen
+falta ni `EXTERNAL_IP` ni publicar puertos:
+
+```yaml
+services:
+  asterisk:
+    networks:
+      lan:
+        ipv4_address: 192.168.1.60 # IP libre, fuera del rango DHCP del router
+
+networks:
+  lan:
+    driver: ipvlan # o macvlan
+    driver_opts:
+      parent: eth0 # interfaz del equipo conectada a la LAN
+      ipvlan_mode: l2
+    ipam:
+      config:
+        - subnet: 192.168.1.0/24
+          gateway: 192.168.1.1
+```
+
+- Por wifi, usa `ipvlan`. `macvlan` da al contenedor una MAC distinta, y muchos
+  puntos de acceso descartan las tramas con MAC desconocidas.
+- El propio equipo no puede comunicarse con esa IP sin crear una interfaz
+  puente adicional. Los móviles y el resto de la red sí pueden.
+- Reserva la IP en el router para que no se la asigne a otro dispositivo.
+
+### Windows/macOS
+
+- **Docker dentro de la VM de VirtualBox en modo puente**: la VM ya tiene IP
+  propia, y el contenedor usa `--network host` como en
+  [Red del host](#red-del-host-solo-linux-la-opción-más-fiable).
+- **Segunda IP en el equipo**: puedes añadir otra IP estática a tu tarjeta de
+  red y publicar los puertos solo en ella, con `EXTERNAL_IP` apuntando a esa IP.
+  Sigue habiendo NAT, pero la centralita queda en su propia dirección. Windows
+  no admite IPs adicionales con DHCP, así que la tarjeta debe pasar a
+  configuración estática.
+
+  ```yaml
+  ports:
+    - "192.168.1.60:5060:5060/udp"
+    - "192.168.1.60:10000-10099:10000-10099/udp"
+  ```
+
+- **Docker Desktop con `EXTERNAL_IP`** (opción por defecto): la centralita
+  comparte la IP del equipo, y `cda-config` se encarga del NAT.
+
 ## Cómo está construida la imagen
 
 - **Alpine 3.22 + paquete `asterisk` oficial de Alpine**: nada se compila, el
@@ -158,9 +246,13 @@ la red local: usa la red bridge con `EXTERNAL_IP`).
   configuración.
 - **Configuración generada al arrancar** (`docker/cda-config`), por capas:
   `docker/asterisk/` (ajustes propios del contenedor) → `configs/` copiada en
-  la imagen → `configs/` montada en `/config`.
+  la imagen → `configs/` montada en `/config`. La última capa prevalece.
+  `/etc/asterisk` se vacía en cada arranque, ya que el sistema de ficheros del
+  contenedor se conserva entre reinicios. Los ficheros del host no se modifican.
 - **Módulos**: el paquete solo trae lo necesario, y `modules.conf` usa
-  `autoload=yes`. Los módulos opcionales cuyo `.conf` no existe (colas,
+  `autoload=yes`. A diferencia de la VM, el contenedor solo incluye los `.conf`
+  necesarios, y con `autoload=yes` un módulo sin su fichero llena el log de
+  errores. Por ello, los módulos opcionales cuyo `.conf` no existe (colas,
   conferencias, ARI…) se desactivan para que el log quede limpio. Si añades por
   ejemplo `queues.conf` a `configs/`, `app_queue` vuelve a cargarse tras un
   `docker compose restart`.

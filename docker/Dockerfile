@@ -1,16 +1,8 @@
 # syntax=docker/dockerfile:1.7
-# =====================================================================
-# Centralita Asterisk del trabajo CDA en un contenedor (alternativa a la VM)
-#
-#   - Base Alpine: Asterisk 20 (misma rama que la VM con Debian 12) en ~40 MB
-#   - Multietapa: la descarga de locuciones y tzdata no llegan a la imagen final
-#   - Se ejecuta como usuario sin privilegios (asterisk)
-# =====================================================================
+# Centralita Asterisk del trabajo CDA sobre Alpine (ver docs/docker.md)
 ARG ALPINE_VERSION=3.22
 
-# ---------------------------------------------------------------------
-# Etapa 1: recursos (locuciones en español y zona horaria de Madrid)
-# ---------------------------------------------------------------------
+# Etapa 1: locuciones en español, zona horaria e indications.conf
 FROM alpine:${ALPINE_VERSION} AS recursos
 
 ARG SOUNDS_VERSION=1.6.1
@@ -20,17 +12,14 @@ ADD --checksum=sha256:${SOUNDS_SHA256} \
     https://downloads.asterisk.org/pub/telephony/sounds/releases/asterisk-core-sounds-es-gsm-${SOUNDS_VERSION}.tar.gz \
     /tmp/sounds.tar.gz
 
-# De tzdata solo se copia Europe/Madrid (voicemail.conf usa tz=madrid) y de
-# los ejemplos de Asterisk solo indications.conf (tonos de llamada por pais).
+# Solo se extraen Europe/Madrid e indications.conf con country=es
 RUN apk add --no-cache tzdata asterisk-sample-config \
  && mkdir -p /out/sounds/es /out/zoneinfo/Europe /out/base \
  && tar -xzf /tmp/sounds.tar.gz -C /out/sounds/es \
  && cp /usr/share/zoneinfo/Europe/Madrid /out/zoneinfo/Europe/ \
  && sed -E 's/^;?country=.*/country=es/' /etc/asterisk/indications.conf > /out/base/indications.conf
 
-# ---------------------------------------------------------------------
 # Etapa 2: imagen final
-# ---------------------------------------------------------------------
 FROM alpine:${ALPINE_VERSION}
 
 LABEL org.opencontainers.image.title="asterisk-cda" \
@@ -50,7 +39,7 @@ COPY docker/asterisk/ /usr/share/cda/base/
 COPY configs/ /usr/share/cda/configs/
 COPY --chmod=755 docker/cda-config docker/cda-recargar docker/entrypoint.sh /usr/local/bin/
 
-# Se eliminan posibles CRLF (repositorio clonado en Windows)
+# Se eliminan posibles CRLF
 RUN sed -i 's/\r$//' /usr/local/bin/cda-config /usr/local/bin/cda-recargar /usr/local/bin/entrypoint.sh \
  && chown -R asterisk:asterisk /etc/asterisk
 
@@ -62,7 +51,7 @@ ENV TZ=Europe/Madrid \
 
 USER asterisk
 
-# 5060/udp y 5060/tcp: senalizacion SIP | 10000-10099/udp: audio/video (RTP)
+# 5060: senalizacion SIP | 10000-10099/udp: audio y video (RTP)
 EXPOSE 5060/udp 5060/tcp 10000-10099/udp
 
 # Mensajes de los buzones de voz

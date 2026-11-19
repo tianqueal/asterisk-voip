@@ -1,6 +1,5 @@
 #!/bin/sh
-# Equivalente a actualizar_config.sh para el contenedor: regenera la
-# configuracion desde /config y la recarga sin reiniciar Asterisk.
+# Regenera la configuracion y la recarga sin reiniciar Asterisk
 # Uso: docker compose exec asterisk cda-recargar
 set -eu
 
