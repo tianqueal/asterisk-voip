@@ -1,0 +1,94 @@
+#!/bin/sh
+# Genera /etc/asterisk por capas: base, configs/ de la imagen y /config.
+# La ultima capa prevalece (ver docs/docker.md).
+set -eu
+
+ETC=/etc/asterisk
+TRANSPORTES=${PJSIP_TRANSPORT:-transport-udp transport-tcp}
+
+# Se vacia el directorio porque el contenedor lo conserva entre reinicios
+rm -f "$ETC"/*
+
+for DIR in /usr/share/cda/base /usr/share/cda/configs /config; do
+  for F in "$DIR"/*.conf; do
+    [ -f "$F" ] && cp "$F" "$ETC/"
+  done
+done
+
+# Se eliminan posibles CRLF
+sed -i 's/\r$//' "$ETC"/*.conf
+
+# Se desactivan los modulos cuyo fichero no existe.
+# Formato: fichero_requerido modulo [modulo...] ("-" = siempre)
+NOLOAD=$(
+  while read -r REQ MODS; do
+    [ -n "$REQ" ] || continue
+    [ "$REQ" != "-" ] && [ -f "$ETC/$REQ" ] && continue
+    for M in $MODS; do printf 'noload => %s.so\n' "$M"; done
+  done <<'EOF'
+ari.conf                res_ari res_ari_events res_ari_device_states res_ari_endpoints res_ari_asterisk res_ari_sounds res_ari_channels res_ari_recordings res_ari_applications res_ari_playbacks res_ari_bridges res_ari_model
+res_parking.conf        res_parking
+confbridge.conf         app_confbridge app_page
+calendar.conf           res_calendar
+agents.conf             app_agent_pool
+cdr.conf                cdr_csv
+cdr_manager.conf        cdr_manager
+cel.conf                cel_manager
+cdr_sqlite3_custom.conf cdr_sqlite3_custom
+cel_sqlite3_custom.conf cel_sqlite3_custom
+res_config_sqlite3.conf res_config_sqlite3
+unistim.conf            chan_unistim
+iax.conf                chan_iax2
+extensions.ael          pbx_ael
+extensions.lua          pbx_lua
+dundi.conf              pbx_dundi
+festival.conf           app_festival
+alarmreceiver.conf      app_alarmreceiver
+amd.conf                app_amd
+followme.conf           app_followme
+queues.conf             app_queue
+minivm.conf             app_minivm
+res_stun_monitor.conf   res_stun_monitor
+pjsip_notify.conf       res_pjsip_notify
+pjsip_wizard.conf       res_pjsip_config_wizard
+phoneprov.conf          res_phoneprov res_pjsip_phoneprov_provider
+hep.conf                res_hep res_hep_pjsip res_hep_rtcp
+cli_aliases.conf        res_clialiases
+cdr_custom.conf         cdr_custom
+cel_custom.conf         cel_custom
+-                       res_http_media_cache res_adsi app_adsiprog app_getcpeid
+EOF
+)
+# "(+)" amplia la seccion [modules] aunque el fichero termine en otra seccion
+printf '\n; --- Anadido por cda-config (modulos sin configuracion) ---\n[modules](+)\n%s\n' "$NOLOAD" >>"$ETC/modules.conf"
+
+# Ficheros vacios (valores por defecto) que el nucleo espera encontrar.
+# Se crean despues de calcular NOLOAD para no reactivar cdr_csv/cel_manager.
+for F in acl.conf aeap.conf ccss.conf cdr.conf cel.conf features.conf pjproject.conf statsd.conf udptl.conf; do
+  [ -f "$ETC/$F" ] || : >"$ETC/$F"
+done
+
+cat >"$ETC/rtp.conf" <<EOF
+[general]
+rtpstart=${RTP_PORT_START:-10000}
+rtpend=${RTP_PORT_END:-10099}
+EOF
+
+# Con EXTERNAL_IP se anuncia la IP del host en lugar de la interna (NAT)
+if [ -n "${EXTERNAL_IP:-}" ]; then
+  {
+    printf '\n; --- Anadido por cda-config (Docker, NAT) ---\n'
+    for TRANSPORTE in $TRANSPORTES; do
+      printf '[%s](+)\n' "$TRANSPORTE"
+      printf 'external_media_address=%s\n' "$EXTERNAL_IP"
+      printf 'external_signaling_address=%s\n' "$EXTERNAL_IP"
+      # Solo se declaran las redes de LOCAL_NET, nunca la interna de Docker
+      for RED in ${LOCAL_NET:-}; do
+        printf 'local_net=%s\n' "$RED"
+      done
+    done
+  } >>"$ETC/pjsip.conf"
+  echo "cda-config: NAT activado, IP anunciada: $EXTERNAL_IP"
+fi
+
+echo "cda-config: configuracion generada en $ETC (RTP ${RTP_PORT_START:-10000}-${RTP_PORT_END:-10099})"

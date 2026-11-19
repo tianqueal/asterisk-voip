@@ -11,6 +11,7 @@ DIR_BASE_VBOX=$(cygpath -w "$DIR_BASE" 2>/dev/null || realpath -m "$DIR_BASE" 2>
 DIR_VARLIB=/var/lib/CDA2627
 
 DIR_SCRIPT=$(dirname "$(realpath "$0")")
+DIR_CONFIGS=$(dirname "$DIR_SCRIPT")/configs
 
 SSH_PORT=2222
 VM_USER="root"
@@ -515,9 +516,9 @@ if ! VBoxManage guestcontrol "$MV_ASTERISK" run --exe "/bin/bash" \
     exit 1
   fi
 
-  if [ -d "$DIR_SCRIPT/configs" ] && [ -n "$(ls -A "$DIR_SCRIPT/configs")" ]; then
+  if [ -d "$DIR_CONFIGS" ] && [ -n "$(ls -A "$DIR_CONFIGS")" ]; then
     CONFIG_ARCHIVOS=()
-    for f in "$DIR_SCRIPT/configs/"*; do
+    for f in "$DIR_CONFIGS/"*; do
       CONFIG_ARCHIVOS+=("$(cygpath -w "$f" 2>/dev/null || echo "$f")")
     done
     VBoxManage guestcontrol "$MV_ASTERISK" copyto -R \

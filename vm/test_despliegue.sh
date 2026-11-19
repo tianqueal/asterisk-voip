@@ -2,6 +2,7 @@
 set -euo pipefail
 
 DIR_SCRIPT=$(dirname "$(realpath "$0")")
+DIR_CONFIGS=$(dirname "$DIR_SCRIPT")/configs
 SCRIPT_DESPLIEGUE="$DIR_SCRIPT/despliegue_asterisk.sh"
 MODO="${1:---e2e}"
 TEST_ID="${TEST_ID:-TEST}"
@@ -80,7 +81,7 @@ if [ "$MODO" = "--ci-guest" ]; then
     fail "Fallo al ejecutar COMANDOS_INSTALACION"
   fi
 
-  cp -f "$DIR_SCRIPT/configs/"* /etc/asterisk/
+  cp -f "$DIR_CONFIGS/"* /etc/asterisk/
   chown -R asterisk:asterisk /etc/asterisk /var/lib/asterisk /var/spool/asterisk /var/log/asterisk /var/run/asterisk 2>/dev/null || true
 
   if /usr/sbin/asterisk; then
