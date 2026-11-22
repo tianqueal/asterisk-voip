@@ -39,8 +39,9 @@ COPY docker/asterisk/ /usr/share/cda/base/
 COPY configs/ /usr/share/cda/configs/
 COPY --chmod=755 docker/cda-config docker/cda-recargar docker/entrypoint.sh /usr/local/bin/
 
-# Se eliminan posibles CRLF
+# Se eliminan posibles CRLF y se crea /etc/localtime, que Asterisk usa en lugar de TZ
 RUN sed -i 's/\r$//' /usr/local/bin/cda-config /usr/local/bin/cda-recargar /usr/local/bin/entrypoint.sh \
+ && ln -sf /usr/share/zoneinfo/Europe/Madrid /etc/localtime \
  && chown -R asterisk:asterisk /etc/asterisk
 
 ENV TZ=Europe/Madrid \

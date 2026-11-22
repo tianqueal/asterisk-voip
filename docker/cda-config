@@ -6,6 +6,12 @@ set -eu
 ETC=/etc/asterisk
 TRANSPORTES=${PJSIP_TRANSPORT:-transport-udp transport-tcp}
 
+# Se comprueba antes de vaciar la configuracion activa
+if [ -d /config ] && ! ls /config >/dev/null 2>&1; then
+  echo "cda-config: ERROR: no se puede leer /config" >&2
+  exit 1
+fi
+
 # Se vacia el directorio porque el contenedor lo conserva entre reinicios
 rm -f "$ETC"/*
 

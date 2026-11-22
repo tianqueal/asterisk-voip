@@ -125,8 +125,8 @@ docker build -f docker/Dockerfile -t asterisk-cda .
 
 docker run -d --name asterisk-cda --init --restart unless-stopped \
   -e EXTERNAL_IP=192.168.1.50 \
-  -p 5060:5060/udp -p 10000-10099:10000-10099/udp \
-  -v "$PWD/configs:/config:ro" -v buzones:/var/spool/asterisk \
+  -p 5060:5060/udp -p 5060:5060/tcp -p 10000-10099:10000-10099/udp \
+  -v "$PWD/configs:/config:ro,z" -v buzones:/var/spool/asterisk \
   --cap-drop ALL --security-opt no-new-privileges \
   asterisk-cda
 ```
@@ -144,7 +144,7 @@ así que no hacen falta `EXTERNAL_IP` ni publicar puertos:
 
 ```bash
 docker run -d --name asterisk-cda --init --network host \
-  -v "$PWD/configs:/config:ro" -v buzones:/var/spool/asterisk asterisk-cda
+  -v "$PWD/configs:/config:ro,z" -v buzones:/var/spool/asterisk asterisk-cda
 ```
 
 (En Docker Desktop para Windows/macOS `--network host` no expone los puertos a
@@ -229,6 +229,7 @@ networks:
   ```yaml
   ports:
     - "192.168.1.60:5060:5060/udp"
+    - "192.168.1.60:5060:5060/tcp"
     - "192.168.1.60:10000-10099:10000-10099/udp"
   ```
 
@@ -281,7 +282,7 @@ docker/
 
 | Síntoma                                             | Causa probable                                                                                                              |
 | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| El móvil no se registra                             | IP del servidor errónea, o el cortafuegos del host bloquea 5060/UDP (en Windows, permite Docker Desktop en redes privadas). |
+| El móvil no se registra                             | IP del servidor errónea, o el cortafuegos bloquea 5060 UDP/TCP (en Windows, permite Docker Desktop en redes privadas).      |
 | La llamada conecta pero no hay audio                | Falta `EXTERNAL_IP` o no es la IP del host en la wifi; o el rango RTP no está publicado.                                    |
 | Audio en un solo sentido                            | `EXTERNAL_IP` apunta a otra interfaz (VPN, adaptador virtual de VirtualBox/WSL…).                                           |
 | Los cambios de `configs/` no se aplican             | Ejecuta `cda-recargar`; para `modules.conf` o el transporte, `docker compose restart`.                                      |

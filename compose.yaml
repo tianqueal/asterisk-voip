@@ -15,12 +15,13 @@ services:
       LOCAL_NET: ${LOCAL_NET:-}
       RTP_PORT_START: ${RTP_PORT_START:-10000}
       RTP_PORT_END: ${RTP_PORT_END:-10099}
+      PJSIP_TRANSPORT: ${PJSIP_TRANSPORT:-}
     ports:
       - "5060:5060/udp"
       - "5060:5060/tcp"
       - "${RTP_PORT_START:-10000}-${RTP_PORT_END:-10099}:${RTP_PORT_START:-10000}-${RTP_PORT_END:-10099}/udp"
     volumes:
-      - ./configs:/config:ro          # editar configs/ y ejecutar cda-recargar
+      - ./configs:/config:ro,z        # editar configs/ y ejecutar cda-recargar
       - buzones:/var/spool/asterisk   # los mensajes de voz sobreviven al contenedor
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
