@@ -392,6 +392,26 @@ configurar_ip_bridge() {
   echo "IP de la centralita: $IP_BRIDGE/$MASK_BRIDGE"
 }
 
+# Pide el identificador de la VM si no se pasó por argumento ni variable de entorno.
+seleccionar_id() {
+  if [ -z "$DIALOG" ]; then
+    echo "$TITULO -- $CURSO"
+    echo -n "Introducir un identificador único (sin espacios) [+ ENTER]: "
+    read -r ID
+  else
+    if ! "$DIALOG" --clear --title "$TITULO" --backtitle "$CURSO" \
+      --inputbox "Introducir un identificador único (sin espacios): " 8 50 2>/tmp/ID.txt; then
+      clear
+      echo "Operación cancelada por el usuario."
+      rm -f /tmp/ID.txt
+      exit 0
+    fi
+    clear
+    ID=$(head -1 /tmp/ID.txt)
+    rm -f /tmp/ID.txt
+  fi
+}
+
 if [ ! -e "$DIR_BASE" ]; then
   echo "Creando directorio $DIR_BASE ..."
   mkdir -p "$DIR_BASE"
@@ -415,26 +435,11 @@ IMAGEN_SWAP=$(cygpath -w "$IMAGEN_SWAP" 2>/dev/null || realpath "$IMAGEN_SWAP")
 comprobar_registro "$IMAGEN_BASE" "$IMAGEN_SWAP"
 registrar_imagenes "$DIR_BASE" "$IMAGEN_BASE" "$IMAGEN_SWAP"
 
-ID=CDA
 DIALOG=$(command -v dialog 2>/dev/null)
 
-if [ -z "$DIALOG" ]; then
-  echo "$TITULO -- $CURSO"
-  echo -n "Introducir un identificador único (sin espacios) [+ ENTER]: "
-  read -r ID
-else
-  if ! "$DIALOG" --clear --title "$TITULO" --backtitle "$CURSO" \
-    --inputbox "Introducir un identificador único (sin espacios): " 8 50 2>/tmp/ID.txt; then
-    clear
-    echo "Operación cancelada por el usuario."
-    rm -f /tmp/ID.txt
-    exit 0
-  fi
-  clear
-  ID=$(head -1 /tmp/ID.txt)
-  rm -f /tmp/ID.txt
-fi
-
+# El identificador se puede pasar como argumento o variable de entorno (ID=xxx).
+ID=${1:-${ID:-}}
+[ -n "$ID" ] || seleccionar_id
 ID=${ID:-CDA}
 
 MV_ASTERISK="ASTERISK_$ID"
@@ -481,7 +486,11 @@ if ! VBoxManage list runningvms | grep -q "\"$MV_ASTERISK\""; then
   VBoxManage modifyvm "$MV_ASTERISK" --bridgeadapter2 "$INTERFAZ_BRIDGE"
   VBoxManage guestproperty set "$MV_ASTERISK" /DSBOX/eth/1/address "$IP_BRIDGE"
   VBoxManage guestproperty set "$MV_ASTERISK" /DSBOX/eth/1/netmask "$MASK_BRIDGE"
-  VBoxManage startvm --type=headless "$MV_ASTERISK" && echo "Iniciando e instalando Asterisk en modo headless."
+  if ! VBoxManage startvm --type=headless "$MV_ASTERISK"; then
+    echo "ERROR: No se pudo iniciar la máquina $MV_ASTERISK." >&2
+    exit 1
+  fi
+  echo "Iniciando e instalando Asterisk en modo headless."
 fi
 
 # Se espera a que las Guest Additions estén activas en este arranque (run level >= 2).
