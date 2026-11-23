@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate host script (${{ matrix.os }})
         shell: bash
-        run: ./test_despliegue.sh --ci-host
+        run: ./vm/test_despliegue.sh --ci-host
 
   guest:
     name: Guest (debian:${{ matrix.debian }})
@@ -32,4 +32,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Provision and verify Asterisk (debian:${{ matrix.debian }})
-        run: ./test_despliegue.sh --ci-guest
+        run: ./vm/test_despliegue.sh --ci-guest

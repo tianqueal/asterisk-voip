@@ -1,0 +1,4 @@
+# Solo se envia al build lo que usa el Dockerfile
+*
+!configs/
+!docker/

@@ -1,0 +1,2 @@
+# Variables locales de Docker Compose (EXTERNAL_IP depende de cada equipo)
+.env
