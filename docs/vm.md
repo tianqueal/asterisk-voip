@@ -81,14 +81,15 @@ comportamiento (el `ID` también se acepta como primer argumento posicional).
 Ejemplo completamente no interactivo (sin preguntas de identificador ni de red):
 
 ```bash
-ID=03 INTERFAZ_BRIDGE="en0: Wi-Fi" IP_BRIDGE=192.168.1.222 ./vm/despliegue_asterisk.sh
+ID=<ID> INTERFAZ_BRIDGE="<interfaz>" IP_BRIDGE=192.168.1.222 ./vm/despliegue_asterisk.sh
 ```
 
-El nombre exacto de `INTERFAZ_BRIDGE` depende del sistema operativo (p. ej.
-`en0: Wi-Fi` en macOS, `wlp2s0`/`enp3s0` en Linux o la descripción del adaptador
-en Windows); puedes consultarlo con `VBoxManage list bridgedifs`. En Mac con
-Apple Silicon la VM se ejecuta con emulación x86, así que el arranque es mucho
-más lento y el tiempo de espera por defecto sube a 300 s.
+En `INTERFAZ_BRIDGE` debe indicarse el valor completo del campo `Name:` devuelto
+por `VBoxManage list bridgedifs`, que varía según el sistema operativo (por
+ejemplo, `wlp0s20f3` en Linux, `Intel(R) Wireless-AC 9560` en Windows o
+`en0: Wi-Fi` en macOS). En Mac con Apple Silicon la VM se ejecuta con emulación
+x86, así que el arranque es mucho más lento y el tiempo de espera por defecto
+sube a 300 s.
 
 ## Comprobar que funciona
 
