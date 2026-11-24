@@ -189,6 +189,20 @@ fi
 
 if [ "$MODO" = "--ci-host" ]; then
   DIALOG=""
+  TITULO="Test"
+  CURSO="Test"
+  ID=""
+  seleccionar_id <<<"03" >/dev/null
+  ID_LEIDO=${ID:-CDA}
+  ID=""
+  seleccionar_id <<<"" >/dev/null
+  ID_DEFECTO=${ID:-CDA}
+  if [ "$ID_LEIDO" = "03" ] && [ "$ID_DEFECTO" = "CDA" ]; then
+    ok "seleccionar_id lee el identificador y aplica el valor por defecto CDA"
+  else
+    fail "Fallo en seleccionar_id ($ID_LEIDO / $ID_DEFECTO)"
+  fi
+
   INTERFAZ_BRIDGE=""
   IP_BRIDGE=""
   MASK_BRIDGE=""

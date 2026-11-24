@@ -68,23 +68,28 @@ Servidor Asterisk activo.
 ### Variables opcionales
 
 Puedes definirlas antes del comando para saltarte las preguntas o ajustar el
-comportamiento.
+comportamiento (el `ID` también se acepta como primer argumento posicional).
 
-| Variable                   | Descripción                                                           |
-| -------------------------- | --------------------------------------------------------------------- |
-| `DIR_BASE`                 | Carpeta de las imágenes y VMs (por defecto `~/CDA2627`).              |
-| `INTERFAZ_BRIDGE`          | Interfaz del host para el adaptador puente (evita la pregunta).       |
-| `IP_BRIDGE`, `MASK_BRIDGE` | IP y prefijo de la centralita (evita la pregunta).                    |
-| `TIMEOUT_GUEST`            | Espera máxima al arranque del invitado, en ms (120 000 por defecto).  |
+| Variable                   | Descripción                                                                   |
+| -------------------------- | ----------------------------------------------------------------------------- |
+| `ID`                       | Identificador de la VM `ASTERISK_<ID>` (evita la pregunta; por defecto `CDA`). |
+| `DIR_BASE`                 | Carpeta de las imágenes y VMs (por defecto `~/CDA2627`).                      |
+| `INTERFAZ_BRIDGE`          | Interfaz del host para el adaptador puente (evita la pregunta).               |
+| `IP_BRIDGE`, `MASK_BRIDGE` | IP y prefijo de la centralita (evita la pregunta).                            |
+| `TIMEOUT_GUEST`            | Espera máxima al arranque del invitado, en ms (120 000 por defecto).          |
 
-Ejemplo sin preguntas de red:
+Ejemplo completamente no interactivo (sin preguntas de identificador ni de red):
 
 ```bash
-INTERFAZ_BRIDGE="Wi-Fi" IP_BRIDGE=192.168.1.222 ./vm/despliegue_asterisk.sh
+ID=<ID> INTERFAZ_BRIDGE="<interfaz>" IP_BRIDGE=192.168.1.222 ./vm/despliegue_asterisk.sh
 ```
 
-En Mac con Apple Silicon la VM se ejecuta con emulación x86, así que el
-arranque es mucho más lento y el tiempo de espera por defecto sube a 300 s.
+En `INTERFAZ_BRIDGE` debe indicarse el valor completo del campo `Name:` devuelto
+por `VBoxManage list bridgedifs`, que varía según el sistema operativo (por
+ejemplo, `wlp0s20f3` en Linux, `Intel(R) Wireless-AC 9560` en Windows o
+`en0: Wi-Fi` en macOS). En Mac con Apple Silicon la VM se ejecuta con emulación
+x86, así que el arranque es mucho más lento y el tiempo de espera por defecto
+sube a 300 s.
 
 ## Comprobar que funciona
 
